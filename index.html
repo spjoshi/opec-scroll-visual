@@ -102,60 +102,69 @@
       const data = await d3.csv(ds.file, d => ({ date: new Date(d.date + '-01'), production: +d.production, price: +d.price }));
       const colorScale = d3.scaleSequential(ds.color).domain(d3.extent(data, d => d.date));
 
+      // update scales and axes
       x.domain(d3.extent(data, d => d.production));
       y.domain(d3.extent(data, d => d.price));
-
       xAxisG.transition().duration(800).call(d3.axisBottom(x));
       yAxisG.transition().duration(800).call(d3.axisLeft(y));
 
+      // update labels
       xLabelText.text(ds.xLabel);
       narrativeText.text(ds.narrative);
 
-      g.selectAll('.scene').transition().duration(300).style('opacity', 0).remove();
-
-      // Draw line
-      g.append('path')
-        .datum(data)
-        .attr('class', 'scene')
-        .attr('fill', 'none')
-        .attr('stroke', '#aaa')
-        .attr('stroke-width', 1.5)
-        .attr('d', lineGen)
-        .style('opacity', 0)
-        .transition().duration(1000).style('opacity', 1);
-
-      // Draw points with tooltip
-      g.selectAll('circle')
-        .data(data)
-        .enter().append('circle')
-        .attr('class', 'scene')
-        .attr('cx', d => x(d.production))
-        .attr('cy', d => y(d.price))
-        .attr('r', 0)
-        .attr('fill', d => colorScale(d.date))
-        .on('mouseover', (event, d) => {
-          tooltip.style('display', 'block')
-            .html(`Date: ${d.date.toLocaleDateString()}<br>Production: ${d.production}<br>Price: $${d.price.toFixed(2)}`);
-        })
-        .on('mousemove', event => {
-          const [mx, my] = d3.pointer(event, container.node());
-          tooltip.style('left', `${mx + 15}px`).style('top', `${my - 15}px`);
-        })
-        .on('mouseout', () => tooltip.style('display', 'none'))
-        .transition().duration(800).attr('r', 4);
-
-      // Draw arrows
-      data.slice(1).forEach((d, i) => {
-        const prev = data[i];
-        g.append('line')
-          .attr('class', 'scene')
-          .attr('x1', x(prev.production)).attr('y1', y(prev.price))
-          .attr('x2', x(d.production)).attr('y2', y(d.price))
-          .attr('stroke', '#666').attr('stroke-width', 1.5)
-          .attr('marker-end', 'url(#arrow)')
+      // fade out old elements
+      const oldElements = g.selectAll('.scene');
+      if (!oldElements.empty()) {
+        oldElements.transition()
+          .duration(500)
           .style('opacity', 0)
-          .transition().duration(1000).style('opacity', 1);
-      });
+          .on('end', function() { d3.select(this).remove(); });
+      }
+
+      // after fade-out, draw new elements
+      d3.timeout(() => {
+        // draw line
+        g.append('path')
+          .datum(data)
+          .attr('class', 'scene')
+          .attr('fill', 'none')
+          .attr('stroke', '#aaa')
+          .attr('stroke-width', 1.5')
+          .attr('d', lineGen)
+          .style('opacity', 0)
+          .transition().duration(800).style('opacity', 1);
+
+        // draw points with tooltip
+        g.selectAll('circle').data(data).enter().append('circle')
+          .attr('class', 'scene')
+          .attr('cx', d => x(d.production))
+          .attr('cy', d => y(d.price))
+          .attr('r', 0)
+          .attr('fill', d => colorScale(d.date))
+          .on('mouseover', (event, d) => {
+            tooltip.style('display', 'block')
+              .html(`Date: ${d.date.toLocaleDateString()}<br>Production: ${d.production}<br>Price: $${d.price.toFixed(2)}`);
+          })
+          .on('mousemove', event => {
+            const [mx, my] = d3.pointer(event, container.node());
+            tooltip.style('left', `${mx + 15}px`).style('top', `${my - 15}px`);
+          })
+          .on('mouseout', () => tooltip.style('display', 'none'))
+          .transition().duration(800).attr('r', 4);
+
+        // draw arrows
+        data.slice(1).forEach((d, i) => {
+          const prev = data[i];
+          g.append('line')
+            .attr('class', 'scene')
+            .attr('x1', x(prev.production)).attr('y1', y(prev.price))
+            .attr('x2', x(d.production)).attr('y2', y(d.price))
+            .attr('stroke', '#666').attr('stroke-width', 1.5)
+            .attr('marker-end', 'url(#arrow)')
+            .style('opacity', 0)
+            .transition().duration(800).style('opacity', 1);
+        });
+      }, 500);
     }
 
     // Initialize

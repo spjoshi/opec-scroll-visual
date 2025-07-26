@@ -2,165 +2,178 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>OPEC Oil Prices Scroll Visualization</title>
+  <title>Oil Prices Scroll Visualization</title>
   <script src="https://d3js.org/d3.v7.min.js"></script>
   <script src="https://unpkg.com/scrollama"></script>
   <style>
-    body {
-      font-family: sans-serif;
-      margin: 0;
+    html, body { margin: 0; height: 100%; font-family: sans-serif; }
+    .container { display: flex; height: 100vh; }
+    .scroll { width: 30%; padding: 2rem; overflow-y: auto; background: #f0f0f0; }
+    .step { margin-bottom: 4rem; opacity: 0.4; transition: opacity 0.3s ease-in; }
+    .step.is-active { opacity: 1; font-weight: bold; }
+    .graphic { width: 70%; position: relative; }
+    svg { width: 100%; height: 100%; }
+    .tooltip {
+      position: absolute;
+      pointer-events: none;
+      background: rgba(255,255,255,0.95);
+      border: 1px solid #ccc;
+      padding: 0.5rem;
+      font-size: 0.9rem;
+      border-radius: 4px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+      display: none;
+      z-index: 10;
     }
-    .container {
-      display: flex;
-    }
-    .scroll {
-      width: 30%;
-      padding: 50px;
-    }
-    .graphic {
-      width: 70%;
-      position: sticky;
-      top: 0;
-      height: 100vh;
-    }
-    .step {
-      margin-bottom: 300px;
-      opacity: 0.4;
-      transition: opacity 0.3s ease-in;
-    }
-    .step.is-active {
-      opacity: 1;
-      font-weight: bold;
-    }
-    svg {
-      width: 100%;
-      height: 100%;
-    }
+    .narrative { font-size: 1rem; font-weight: 600; fill: #333; }
+    .axis-label { font-size: 0.85rem; fill: #555; text-anchor: middle; }
   </style>
 </head>
 <body>
-<div class="container">
-  <div class="scroll">
-    <div class="step" data-index="0">March 2001: Oil prices begin gradual increase.</div>
-    <div class="step" data-index="1">February 2003: Geopolitical tensions rise.</div>
-    <div class="step" data-index="2">June 2007: Acceleration in prices continues.</div>
-    <div class="step" data-index="3">June 2008: Peak production and oil price.</div>
-    <div class="step" data-index="4">Late 2008: Global financial crisis impacts prices.</div>
+  <div class="container">
+    <div class="scroll">
+      <div class="step" data-index="0">OPEC Era (Mar 2001–Jun 2008): Price responds to OPEC supply control.</div>
+      <div class="step" data-index="1">U.S. Shale Boom (Sep 2010–Apr 2015): Domestic production reshapes the market.</div>
+      <div class="step" data-index="2">Future Scenario (2025–2026): Exploring hypothetical production & price sensitivity.</div>
+    </div>
+    <div class="graphic">
+      <svg></svg>
+      <div class="tooltip" id="tooltip"></div>
+    </div>
   </div>
-  <div class="graphic">
-    <svg></svg>
-  </div>
-</div>
 
-<script>
-const svg = d3.select("svg"),
-      margin = { top: 40, right: 60, bottom: 50, left: 60 },
-      width = svg.node().getBoundingClientRect().width - margin.left - margin.right,
-      height = svg.node().getBoundingClientRect().height - margin.top - margin.bottom,
-      g = svg.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
+  <script>
+    const container = d3.select('.graphic');
+    const svg = container.select('svg');
+    const tooltip = container.select('#tooltip');
 
-let x = d3.scaleLinear().range([0, width]),
-    y = d3.scaleLinear().range([height, 0]),
-    color = d3.scaleSequential(d3.interpolateInferno);
+    const margin = { top: 60, right: 60, bottom: 60, left: 60 };
+    let width, height, g;
 
-let xAxis = g.append("g").attr("transform", `translate(0,${height})`),
-    yAxis = g.append("g");
+    const datasets = [
+      { file: 'sample_opec_oil_data.csv', xLabel: 'OPEC production (Mbbl/day)', narrative: 'OPEC Era: Price responds to OPEC supply control.', color: d3.interpolateInferno },
+      { file: 'sample_us_oil_data.csv',  xLabel: 'U.S. production (Mbbl/day)',   narrative: 'U.S. Shale Boom: Domestic production reshapes the market.', color: d3.interpolateCool },
+      { file: 'sample_future_scenario.csv', xLabel: 'Projected production (Mbbl/day)', narrative: 'Future Scenario: Exploring hypothetical production & price sensitivity.', color: d3.interpolatePlasma }
+    ];
 
-let line = d3.line()
-  .x(d => x(d.production))
-  .y(d => y(d.price));
+    let x = d3.scaleLinear();
+    let y = d3.scaleLinear();
+    const lineGen = d3.line().x(d => x(d.production)).y(d => y(d.price));
 
-let data;
-d3.csv("sample_opec_oil_data.csv", d => ({
-  date: new Date(d.date + "-01"),
-  production: +d.production,
-  price: +d.price
-})).then(raw => {
-  data = raw;
-  x.domain(d3.extent(data, d => d.production));
-  y.domain(d3.extent(data, d => d.price));
-  color.domain(d3.extent(data, d => d.date));
+    let xAxisG, yAxisG, xLabelText, narrativeText;
 
-  xAxis.call(d3.axisBottom(x));
-  yAxis.call(d3.axisLeft(y));
+    function initChart() {
+      svg.selectAll('*').remove();
+      width = container.node().clientWidth - margin.left - margin.right;
+      height = container.node().clientHeight - margin.top - margin.bottom;
 
-  g.append("path")
-    .datum(data)
-    .attr("fill", "none")
-    .attr("stroke", "#aaa")
-    .attr("stroke-width", 1.5)
-    .attr("d", line);
+      g = svg.append('g').attr('transform', `translate(${margin.left},${margin.top})`);
+      x = d3.scaleLinear().range([0, width]);
+      y = d3.scaleLinear().range([height, 0]);
 
-  g.selectAll("circle")
-    .data(data)
-    .enter()
-    .append("circle")
-    .attr("cx", d => x(d.production))
-    .attr("cy", d => y(d.price))
-    .attr("r", 4)
-    .attr("fill", d => color(d.date));
+      xAxisG = g.append('g').attr('transform', `translate(0,${height})`);
+      yAxisG = g.append('g');
 
-  for (let i = 1; i < data.length; i++) {
-    g.append("line")
-      .attr("x1", x(data[i - 1].production))
-      .attr("y1", y(data[i - 1].price))
-      .attr("x2", x(data[i].production))
-      .attr("y2", y(data[i].price))
-      .attr("stroke", "#ccc")
-      .attr("marker-end", "url(#arrow)");
-  }
+      xLabelText = svg.append('text')
+        .attr('class', 'axis-label')
+        .attr('x', margin.left + width / 2)
+        .attr('y', margin.top + height + 40);
 
-  svg.append("defs").append("marker")
-    .attr("id", "arrow")
-    .attr("viewBox", "0 -5 10 10")
-    .attr("refX", 5)
-    .attr("refY", 0)
-    .attr("markerWidth", 6)
-    .attr("markerHeight", 6)
-    .attr("orient", "auto")
-    .append("path")
-    .attr("d", "M0,-5L10,0L0,5")
-    .attr("fill", "#999");
+      narrativeText = svg.append('text')
+        .attr('class', 'narrative')
+        .attr('x', margin.left + 10)
+        .attr('y', margin.top - 20);
 
-  const annotations = [
-    { date: "2001-03-01", label: "Start rise" },
-    { date: "2003-02-01", label: "Tensions rise" },
-    { date: "2007-06-01", label: "Acceleration" },
-    { date: "2008-06-01", label: "Peak" },
-    { date: "2008-10-01", label: "Crisis" }
-  ];
-
-  annotations.forEach(a => {
-    const match = data.find(d => d.date.getTime() === new Date(a.date).getTime());
-    if (match) {
-      g.append("text")
-        .attr("x", x(match.production) + 8)
-        .attr("y", y(match.price) - 10)
-        .text(a.label)
-        .attr("font-size", "12px")
-        .attr("fill", "black");
+      svg.append('defs').append('marker')
+        .attr('id', 'arrow')
+        .attr('viewBox', '0 -5 10 10')
+        .attr('refX', 8)
+        .attr('refY', 0)
+        .attr('markerWidth', 6)
+        .attr('markerHeight', 6)
+        .attr('orient', 'auto')
+        .append('path')
+        .attr('d', 'M0,-5L10,0L0,5')
+        .attr('fill', '#666');
     }
-  });
 
-  const scroller = scrollama();
-  scroller.setup({ step: ".step", offset: 0.6, debug: false })
-    .onStepEnter(({ index }) => {
-      d3.selectAll(".step").classed("is-active", (d, i) => i === index);
-      let highlightDates = [
-        new Date("2001-03-01"),
-        new Date("2003-02-01"),
-        new Date("2007-06-01"),
-        new Date("2008-06-01"),
-        new Date("2008-10-01")
-      ];
-      g.selectAll("circle")
-        .transition()
-        .duration(300)
-        .attr("r", d => d.date.getTime() === highlightDates[index].getTime() ? 8 : 4)
-        .attr("stroke", d => d.date.getTime() === highlightDates[index].getTime() ? "black" : "none")
-        .attr("stroke-width", 2);
+    async function updateVisual(index) {
+      const ds = datasets[index];
+      const data = await d3.csv(ds.file, d => ({ date: new Date(d.date + '-01'), production: +d.production, price: +d.price }));
+      const colorScale = d3.scaleSequential(ds.color).domain(d3.extent(data, d => d.date));
+
+      x.domain(d3.extent(data, d => d.production));
+      y.domain(d3.extent(data, d => d.price));
+
+      xAxisG.transition().duration(800).call(d3.axisBottom(x));
+      yAxisG.transition().duration(800).call(d3.axisLeft(y));
+
+      xLabelText.text(ds.xLabel);
+      narrativeText.text(ds.narrative);
+
+      g.selectAll('.scene').transition().duration(300).style('opacity', 0).remove();
+
+      // Draw line
+      g.append('path')
+        .datum(data)
+        .attr('class', 'scene')
+        .attr('fill', 'none')
+        .attr('stroke', '#aaa')
+        .attr('stroke-width', 1.5)
+        .attr('d', lineGen)
+        .style('opacity', 0)
+        .transition().duration(1000).style('opacity', 1);
+
+      // Draw points with tooltip
+      g.selectAll('circle')
+        .data(data)
+        .enter().append('circle')
+        .attr('class', 'scene')
+        .attr('cx', d => x(d.production))
+        .attr('cy', d => y(d.price))
+        .attr('r', 0)
+        .attr('fill', d => colorScale(d.date))
+        .on('mouseover', (event, d) => {
+          tooltip.style('display', 'block')
+            .html(`Date: ${d.date.toLocaleDateString()}<br>Production: ${d.production}<br>Price: $${d.price.toFixed(2)}`);
+        })
+        .on('mousemove', event => {
+          const [mx, my] = d3.pointer(event, container.node());
+          tooltip.style('left', `${mx + 15}px`).style('top', `${my - 15}px`);
+        })
+        .on('mouseout', () => tooltip.style('display', 'none'))
+        .transition().duration(800).attr('r', 4);
+
+      // Draw arrows
+      data.slice(1).forEach((d, i) => {
+        const prev = data[i];
+        g.append('line')
+          .attr('class', 'scene')
+          .attr('x1', x(prev.production)).attr('y1', y(prev.price))
+          .attr('x2', x(d.production)).attr('y2', y(d.price))
+          .attr('stroke', '#666').attr('stroke-width', 1.5)
+          .attr('marker-end', 'url(#arrow)')
+          .style('opacity', 0)
+          .transition().duration(1000).style('opacity', 1);
+      });
+    }
+
+    // Initialize
+    initChart();
+    updateVisual(0);
+
+    // Scrollama
+    const scroller = scrollama();
+    scroller.setup({ step: '.step', offset: 0.6 }).onStepEnter(({ index }) => updateVisual(index));
+
+    // Responsive
+    window.addEventListener('resize', () => {
+      initChart();
+      const activeStep = document.querySelector('.step.is-active');
+      const idx = activeStep ? +activeStep.getAttribute('data-index') : 0;
+      updateVisual(idx);
+      scroller.resize();
     });
-});
-</script>
+  </script>
 </body>
 </html>

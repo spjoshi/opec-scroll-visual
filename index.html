@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>OPEC Oil Prices Scroll Visualization</title>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <script src="https://unpkg.com/scrollama"></script>
+  <style>
+    body {
+      font-family: sans-serif;
+      margin: 0;
+    }
+    .container {
+      display: flex;
+    }
+    .scroll {
+      width: 30%;
+      padding: 50px;
+    }
+    .graphic {
+      width: 70%;
+      position: sticky;
+      top: 0;
+      height: 100vh;
+    }
+    .step {
+      margin-bottom: 300px;
+      opacity: 0.4;
+      transition: opacity 0.3s ease-in;
+    }
+    .step.is-active {
+      opacity: 1;
+      font-weight: bold;
+    }
+    svg {
+      width: 100%;
+      height: 100%;
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+  <div class="scroll">
+    <div class="step" data-index="0">March 2001: Oil prices begin gradual increase.</div>
+    <div class="step" data-index="1">February 2003: Geopolitical tensions rise.</div>
+    <div class="step" data-index="2">June 2007: Acceleration in prices continues.</div>
+    <div class="step" data-index="3">June 2008: Peak production and oil price.</div>
+    <div class="step" data-index="4">Late 2008: Global financial crisis impacts prices.</div>
+  </div>
+  <div class="graphic">
+    <svg></svg>
+  </div>
+</div>
+
+<script>
+const svg = d3.select("svg"),
+      margin = { top: 40, right: 60, bottom: 50, left: 60 },
+      width = svg.node().getBoundingClientRect().width - margin.left - margin.right,
+      height = svg.node().getBoundingClientRect().height - margin.top - margin.bottom,
+      g = svg.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
+
+let x = d3.scaleLinear().range([0, width]),
+    y = d3.scaleLinear().range([height, 0]),
+    color = d3.scaleSequential(d3.interpolateInferno);
+
+let xAxis = g.append("g").attr("transform", `translate(0,${height})`),
+    yAxis = g.append("g");
+
+let line = d3.line()
+  .x(d => x(d.production))
+  .y(d => y(d.price));
+
+let data;
+d3.csv("sample_opec_oil_data.csv", d => ({
+  date: new Date(d.date + "-01"),
+  production: +d.production,
+  price: +d.price
+})).then(raw => {
+  data = raw;
+  x.domain(d3.extent(data, d => d.production));
+  y.domain(d3.extent(data, d => d.price));
+  color.domain(d3.extent(data, d => d.date));
+
+  xAxis.call(d3.axisBottom(x));
+  yAxis.call(d3.axisLeft(y));
+
+  g.append("path")
+    .datum(data)
+    .attr("fill", "none")
+    .attr("stroke", "#aaa")
+    .attr("stroke-width", 1.5)
+    .attr("d", line);
+
+  g.selectAll("circle")
+    .data(data)
+    .enter()
+    .append("circle")
+    .attr("cx", d => x(d.production))
+    .attr("cy", d => y(d.price))
+    .attr("r", 4)
+    .attr("fill", d => color(d.date));
+
+  for (let i = 1; i < data.length; i++) {
+    g.append("line")
+      .attr("x1", x(data[i - 1].production))
+      .attr("y1", y(data[i - 1].price))
+      .attr("x2", x(data[i].production))
+      .attr("y2", y(data[i].price))
+      .attr("stroke", "#ccc")
+      .attr("marker-end", "url(#arrow)");
+  }
+
+  svg.append("defs").append("marker")
+    .attr("id", "arrow")
+    .attr("viewBox", "0 -5 10 10")
+    .attr("refX", 5)
+    .attr("refY", 0)
+    .attr("markerWidth", 6)
+    .attr("markerHeight", 6)
+    .attr("orient", "auto")
+    .append("path")
+    .attr("d", "M0,-5L10,0L0,5")
+    .attr("fill", "#999");
+
+  const annotations = [
+    { date: "2001-03-01", label: "Start rise" },
+    { date: "2003-02-01", label: "Tensions rise" },
+    { date: "2007-06-01", label: "Acceleration" },
+    { date: "2008-06-01", label: "Peak" },
+    { date: "2008-10-01", label: "Crisis" }
+  ];
+
+  annotations.forEach(a => {
+    const match = data.find(d => d.date.getTime() === new Date(a.date).getTime());
+    if (match) {
+      g.append("text")
+        .attr("x", x(match.production) + 8)
+        .attr("y", y(match.price) - 10)
+        .text(a.label)
+        .attr("font-size", "12px")
+        .attr("fill", "black");
+    }
+  });
+
+  const scroller = scrollama();
+  scroller.setup({ step: ".step", offset: 0.6, debug: false })
+    .onStepEnter(({ index }) => {
+      d3.selectAll(".step").classed("is-active", (d, i) => i === index);
+      let highlightDates = [
+        new Date("2001-03-01"),
+        new Date("2003-02-01"),
+        new Date("2007-06-01"),
+        new Date("2008-06-01"),
+        new Date("2008-10-01")
+      ];
+      g.selectAll("circle")
+        .transition()
+        .duration(300)
+        .attr("r", d => d.date.getTime() === highlightDates[index].getTime() ? 8 : 4)
+        .attr("stroke", d => d.date.getTime() === highlightDates[index].getTime() ? "black" : "none")
+        .attr("stroke-width", 2);
+    });
+});
+</script>
+</body>
+</html>
